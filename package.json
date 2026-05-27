@@ -1,0 +1,59 @@
+{
+  "name": "@yaya-digital/sanity-plugin-ga-dashboard",
+  "version": "1.0.0",
+  "description": "GA4 dashboard plugin for Sanity Studio with BFF-mediated OAuth",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "source": "./src/server/index.ts",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "recharts": "^2.5.0",
+    "zod": "^3.22.0"
+  },
+  "peerDependencies": {
+    "@sanity/icons": "^3",
+    "@sanity/ui": "^3",
+    "@vercel/kv": "^3",
+    "react": "^18 || ^19",
+    "sanity": "^3 || ^5"
+  },
+  "peerDependenciesMeta": {
+    "@vercel/kv": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sanity/icons": "^3.0.0",
+    "@sanity/ui": "^3.0.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@vercel/kv": "^3.0.0",
+    "sanity": "^5.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "6.0.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  }
+}
