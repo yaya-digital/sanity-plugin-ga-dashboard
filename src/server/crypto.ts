@@ -4,20 +4,20 @@ export interface EncryptedData {
   authTag: string
 }
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const arr = new Uint8Array(hex.length / 2)
   for (let i = 0; i < hex.length; i += 2) arr[i / 2] = parseInt(hex.slice(i, i + 2), 16)
   return arr
 }
 
-function toBase64(bytes: ArrayBuffer): string {
+function toBase64(bytes: Uint8Array<ArrayBufferLike> | ArrayBuffer): string {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
   let binary = ''
-  const arr = new Uint8Array(bytes)
   for (let i = 0; i < arr.length; i++) binary += String.fromCharCode(arr[i])
   return btoa(binary)
 }
 
-function fromBase64(b64: string): Uint8Array {
+function fromBase64(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64)
   const arr = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i)
@@ -37,7 +37,7 @@ export async function encrypt(plaintext: string, hexKey: string): Promise<Encryp
   crypto.getRandomValues(iv)
   const encoded = new TextEncoder().encode(plaintext)
   const encrypted = await crypto.subtle.encrypt({name: 'AES-GCM', iv, tagLength: 128}, key, encoded)
-  // AES-GCM in Web Crypto appends the 16-byte auth tag at the end of the ciphertext
+  // AES-GCM appends the 16-byte auth tag at the end of the ciphertext
   const ciphertextWithTag = new Uint8Array(encrypted)
   const ciphertext = ciphertextWithTag.slice(0, ciphertextWithTag.length - 16)
   const authTag = ciphertextWithTag.slice(ciphertextWithTag.length - 16)

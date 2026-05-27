@@ -7,9 +7,9 @@ const DateRangeSchema = z.object({
   endDate: z.string(),
 })
 
-const BodySchema = z.discriminatedUnion('mode', [
+const BodySchema = z.union([
   z.object({mode: z.literal('event-params'), event: z.string(), dateRange: DateRangeSchema}),
-  z.object({mode: z.undefined().default(undefined), dateRange: DateRangeSchema}),
+  z.object({mode: z.undefined().optional(), dateRange: DateRangeSchema}),
 ])
 
 type DateRangeInput = {startDate: string; endDate: string}
