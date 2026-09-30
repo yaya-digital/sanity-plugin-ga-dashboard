@@ -1,13 +1,15 @@
 import {kv} from '@vercel/kv'
-import {base64urlEncode, generateSid} from './utils'
-import {createSession, buildSessionCookie, clearSessionCookie, deleteSession, getRootDomain, parseSid} from './session'
+import {base64urlEncode, generateSid, readJson} from './utils'
+import {createSession, buildSessionCookie, clearSessionCookie, deleteSession, getRootDomain, requestSid} from './session'
+import {buildCorsHeaders} from './cors'
 
 const SCOPES = 'openid email https://www.googleapis.com/auth/analytics.readonly'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
+const CLAIM_TTL = 600
 
 function popupSuccessHtml(): string {
-  return `<!DOCTYPE html><html><body><script>window.close()</script></body></html>`
+  return `<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:40px;color:#475569">Connected. You can close this window.<script>window.close()</script></body></html>`
 }
 
 function oauthErrorHtml(message: string): string {
@@ -34,8 +36,11 @@ export async function login(request: Request): Promise<Response> {
   const challengeHash = await crypto.subtle.digest('SHA-256', verifierBytes)
   const challenge = base64urlEncode(new Uint8Array(challengeHash))
   const state = generateSid()
+  // The Studio generates the nonce and polls claim-session with it. Carrying it
+  // in the PKCE record lets the callback hand the session to that poll.
+  const nonce = url.searchParams.get('nonce') ?? undefined
 
-  await kv.set(`ga:pkce:${state}`, JSON.stringify({verifier, studioUrl}), {ex: 300})
+  await kv.set(`ga:pkce:${state}`, JSON.stringify({verifier, studioUrl, nonce}), {ex: 300})
 
   const redirectUri = `${callbackBase}/api/auth/google/callback`
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
@@ -67,12 +72,12 @@ export async function callback(request: Request): Promise<Response> {
   if (!clientId || !clientSecret || !encKey)
     return html(oauthErrorHtml('Server misconfigured.'), 500)
 
-  const pkceRaw = await kv.get<string>(`ga:pkce:${state}`)
+  const pkceRaw = await kv.get<unknown>(`ga:pkce:${state}`)
   if (!pkceRaw) return html(oauthErrorHtml('Invalid or expired state.'), 400)
 
-  let pkce: {verifier: string; studioUrl?: string}
+  let pkce: {verifier: string; studioUrl?: string; nonce?: string}
   try {
-    pkce = JSON.parse(pkceRaw)
+    pkce = readJson(pkceRaw)
   } catch {
     return html(oauthErrorHtml('Corrupt state.'), 400)
   }
@@ -126,6 +131,7 @@ export async function callback(request: Request): Promise<Response> {
   }
 
   const sid = await createSession(tokens.refresh_token, sub, email, encKey)
+  if (pkce.nonce) await kv.set(`ga:claim:${pkce.nonce}`, {sid}, {ex: CLAIM_TTL})
   const host = url.host
   const rootDomain = getRootDomain(host)
   const cookie = buildSessionCookie(sid, rootDomain)
@@ -134,8 +140,7 @@ export async function callback(request: Request): Promise<Response> {
 }
 
 export async function logout(request: Request): Promise<Response> {
-  const cookieHeader = request.headers.get('cookie')
-  const sid = parseSid(cookieHeader)
+  const sid = requestSid(request)
 
   if (sid) {
     const refreshToken = await deleteSession(sid)
@@ -163,4 +168,43 @@ export async function logout(request: Request): Promise<Response> {
       'Access-Control-Allow-Credentials': 'true',
     },
   })
+}
+
+// The Studio polls this with the nonce it generated before opening the OAuth
+// popup. Once the callback has stashed the session ID under that nonce it is
+// returned once, then deleted.
+export async function claimSession(request: Request): Promise<Response> {
+  const studioOrigin = process.env.NEXT_PUBLIC_SANITY_STUDIO_URL ?? ''
+  const corsHeaders = buildCorsHeaders(studioOrigin, request)
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: {...corsHeaders, 'Content-Type': 'application/json'},
+    })
+
+  if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: corsHeaders})
+  if (request.method !== 'POST') return json({error: 'Method not allowed'}, 405)
+
+  let nonce = ''
+  try {
+    const body = (await request.json()) as {nonce?: unknown}
+    if (typeof body?.nonce === 'string') nonce = body.nonce
+  } catch {
+    return json({error: 'Invalid body'}, 400)
+  }
+  if (!nonce) return json({error: 'Missing nonce'}, 400)
+
+  const raw = await kv.get<unknown>(`ga:claim:${nonce}`)
+  if (!raw) return json({pending: true}, 200)
+
+  let sid: string | undefined
+  try {
+    sid = readJson<{sid?: string}>(raw).sid
+  } catch {
+    sid = undefined
+  }
+  if (!sid) return json({pending: true}, 200)
+
+  await kv.del(`ga:claim:${nonce}`)
+  return json({sid}, 200)
 }

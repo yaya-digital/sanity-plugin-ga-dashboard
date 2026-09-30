@@ -39,8 +39,10 @@ function SetupGuide() {
           Google Analytics Setup Required
         </h2>
         <p style={{margin: '0 0 24px', fontSize: 14, color: '#777'}}>
-          Set <code style={mono}>SANITY_STUDIO_GA_BFF_ORIGIN</code> in your Studio environment to
-          the base URL of your web app (e.g. <code style={mono}>https://customer.com</code>).
+          Set <code style={mono}>SANITY_STUDIO_GA_BFF_ORIGIN</code> to the base URL of your web app
+          (e.g. <code style={mono}>https://customer.com</code>) in the shell that builds the
+          Studio, then redeploy it. The value is baked into the bundle at build time. The GA4
+          property ID is set on the web app as <code style={mono}>GA4_PROPERTY_ID</code>.
         </p>
         <div
           style={{
@@ -59,7 +61,7 @@ function SetupGuide() {
               lineHeight: 1.6,
             }}
           >
-            {`SANITY_STUDIO_GA_BFF_ORIGIN=https://customer.com\nSANITY_STUDIO_GA_PROPERTY_ID=123456789`}
+            {`SANITY_STUDIO_GA_BFF_ORIGIN=https://customer.com npx sanity deploy`}
           </pre>
         </div>
         <p style={{margin: 0, fontSize: 13, color: '#777', lineHeight: 1.6}}>

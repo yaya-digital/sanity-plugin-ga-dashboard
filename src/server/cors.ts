@@ -5,7 +5,7 @@ export function buildCorsHeaders(studioOrigin: string, request: Request): Record
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Headers': 'content-type, x-ga-session',
     'Vary': 'Origin',
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@yaya-digital/sanity-plugin-ga-dashboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "GA4 dashboard plugin for Sanity Studio with BFF-mediated OAuth",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -24,7 +24,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "recharts": "^2.5.0",
@@ -50,7 +51,8 @@
     "@vercel/kv": "^3.0.0",
     "sanity": "^5.0.0",
     "tsup": "^8.0.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public",
