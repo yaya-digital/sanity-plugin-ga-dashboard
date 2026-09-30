@@ -19,6 +19,58 @@ import type {
   UserTypeData,
 } from '../types'
 
+// The Studio and the BFF are on different sites, so the BFF's session cookie
+// never reaches the Studio. The session ID is claimed once after OAuth, kept
+// here, and sent as a header on every report request.
+const SID_KEY = '__ga_sid'
+
+function getStoredSid(): string {
+  try {
+    return localStorage.getItem(SID_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function storeSid(sid: string): void {
+  try {
+    localStorage.setItem(SID_KEY, sid)
+  } catch {
+    // storage unavailable — the dashboard will ask to connect again
+  }
+}
+
+function clearStoredSid(): void {
+  try {
+    localStorage.removeItem(SID_KEY)
+  } catch {
+    // nothing to clear
+  }
+}
+
+function reportHeaders(): Record<string, string> {
+  const sid = getStoredSid()
+  return {'Content-Type': 'application/json', ...(sid ? {'x-ga-session': sid} : {})}
+}
+
+function unauthenticated(): Error {
+  clearStoredSid()
+  return new Error('GA_UNAUTHENTICATED')
+}
+
+/** Returns the session ID once the OAuth callback has stashed it, else null. */
+export async function claimSession(bffOrigin: string, nonce: string): Promise<string | null> {
+  const res = await fetch(`${bffOrigin}/api/ga4/claim-session`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nonce}),
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const data = (await res.json().catch(() => null)) as {sid?: string} | null
+  return data?.sid || null
+}
+
 export async function fetchAnalyticsData(
   bffOrigin: string,
   dateRange: DateRange,
@@ -26,11 +78,11 @@ export async function fetchAnalyticsData(
   const res = await fetch(`${bffOrigin}/api/ga4/run-report`, {
     method: 'POST',
     credentials: 'include',
-    headers: {'Content-Type': 'application/json'},
+    headers: reportHeaders(),
     body: JSON.stringify({dateRange}),
     cache: 'no-store',
   })
-  if (res.status === 401) throw new Error('GA_UNAUTHENTICATED')
+  if (res.status === 401) throw unauthenticated()
   if (!res.ok) {
     const err = await res.json().catch(() => null)
     throw new Error(
@@ -48,11 +100,11 @@ export async function fetchEventParams(
   const res = await fetch(`${bffOrigin}/api/ga4/run-report`, {
     method: 'POST',
     credentials: 'include',
-    headers: {'Content-Type': 'application/json'},
+    headers: reportHeaders(),
     body: JSON.stringify({mode: 'event-params', event: eventName, dateRange}),
     cache: 'no-store',
   })
-  if (res.status === 401) throw new Error('GA_UNAUTHENTICATED')
+  if (res.status === 401) throw unauthenticated()
   if (!res.ok) {
     const err = await res.json().catch(() => null)
     throw new Error(

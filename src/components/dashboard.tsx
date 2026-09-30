@@ -1,11 +1,11 @@
-import {useState, useEffect, useCallback} from 'react'
+import {useState, useEffect, useCallback, useRef} from 'react'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import type {AnalyticsData, DateRange, EventParamRow} from '../types'
-import {fetchAnalyticsData, fetchEventParams} from '../utils/ga-api'
+import {claimSession, fetchAnalyticsData, fetchEventParams, storeSid} from '../utils/ga-api'
 
 /* ─────────────────────────────────────────────
    Constants
@@ -326,15 +326,44 @@ function SkeletonChart({height}: {height: number}) {
 /* ─────────────────────────────────────────────
    Connect UI
 ───────────────────────────────────────────── */
+const CLAIM_POLL_MS = 1500
+const CLAIM_TIMEOUT_MS = 180000
+
+function newNonce(): string {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return String(Date.now()) + Math.random().toString(36).slice(2)
+  }
+}
+
 function ConnectUI({bffOrigin, onConnected}: {bffOrigin: string; onConnected: () => void}) {
+  const stopPolling = useRef<() => void>(() => {})
+  useEffect(() => () => stopPolling.current(), [])
+
+  // The popup ends on the BFF's origin, so the Studio can neither read its
+  // cookie nor rely on window.closed (COOP severs the handle). Poll the BFF
+  // with a nonce instead; the callback stashes the session ID under it.
   const handleConnect = () => {
-    const popup = window.open(`${bffOrigin}/api/auth/google/login`, 'ga-oauth', 'width=600,height=700')
+    stopPolling.current()
+    const nonce = newNonce()
+    window.open(`${bffOrigin}/api/auth/google/login?nonce=${encodeURIComponent(nonce)}`, 'ga-oauth', 'width=600,height=700')
     const timer = setInterval(() => {
-      if (popup?.closed) {
-        clearInterval(timer)
-        onConnected()
-      }
-    }, 500)
+      claimSession(bffOrigin, nonce)
+        .then((sid) => {
+          if (!sid) return
+          stopPolling.current()
+          storeSid(sid)
+          onConnected()
+        })
+        .catch(() => {})
+    }, CLAIM_POLL_MS)
+    const timeout = setTimeout(() => stopPolling.current(), CLAIM_TIMEOUT_MS)
+    stopPolling.current = () => {
+      clearInterval(timer)
+      clearTimeout(timeout)
+      stopPolling.current = () => {}
+    }
   }
   return (
     <div style={{display:'flex',justifyContent:'center',alignItems:'center',minHeight:'100vh',background:'#f8fafc'}}>

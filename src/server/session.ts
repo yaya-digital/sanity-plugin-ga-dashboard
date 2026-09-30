@@ -1,7 +1,7 @@
 import {kv} from '@vercel/kv'
 import type {EncryptedData} from './crypto'
 import {encrypt, decrypt} from './crypto'
-import {generateSid} from './utils'
+import {generateSid, readJson} from './utils'
 
 const SESSION_TTL = 60 * 60 * 24 * 30 // 30 days
 const ACCESS_TOKEN_TTL = 60 * 50 // 50 minutes
@@ -17,6 +17,13 @@ export function getRootDomain(host: string): string {
   const parts = host.split('.')
   if (parts.length <= 2) return host
   return parts.slice(1).join('.')
+}
+
+// The Studio is on a different site from the BFF, so the session cookie never
+// reaches it. The Studio sends the session ID as a header instead; the cookie
+// is still honoured for same-site setups.
+export function requestSid(request: Request): string | null {
+  return request.headers.get('x-ga-session') || parseSid(request.headers.get('cookie'))
 }
 
 export function parseSid(cookieHeader: string | null): string | null {
@@ -58,12 +65,12 @@ export async function getAccessToken(
   const cached = await kv.get<string>(`ga:access:${sid}`)
   if (cached) return cached
 
-  const raw = await kv.get<string>(`ga:session:${sid}`)
+  const raw = await kv.get<unknown>(`ga:session:${sid}`)
   if (!raw) return null
 
   let session: SessionData
   try {
-    session = JSON.parse(raw) as SessionData
+    session = readJson<SessionData>(raw)
   } catch {
     return null
   }
@@ -99,13 +106,13 @@ export async function getAccessToken(
 }
 
 export async function deleteSession(sid: string): Promise<string | null> {
-  const raw = await kv.get<string>(`ga:session:${sid}`)
+  const raw = await kv.get<unknown>(`ga:session:${sid}`)
   let refreshToken: string | null = null
 
   if (raw) {
     try {
       const encKey = process.env.GA_TOKEN_ENC_KEY!
-      const session = JSON.parse(raw) as SessionData
+      const session = readJson<SessionData>(raw)
       refreshToken = await decrypt(session.encryptedRefreshToken, encKey)
     } catch {
       // best-effort

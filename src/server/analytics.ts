@@ -1,11 +1,16 @@
 import {z} from 'zod'
 import {buildCorsHeaders} from './cors'
-import {parseSid, getAccessToken, checkRateLimit} from './session'
+import {requestSid, getAccessToken, checkRateLimit} from './session'
 
-const DateRangeSchema = z.object({
-  startDate: z.string(),
-  endDate: z.string(),
-})
+// The dashboard sends a day count ('7' | '14' | '30' | '90'); explicit ranges are
+// accepted too.
+const DateRangeSchema = z.union([
+  z.object({startDate: z.string(), endDate: z.string()}),
+  z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform((days) => ({startDate: `${parseInt(days, 10)}daysAgo`, endDate: 'today'})),
+])
 
 const BodySchema = z.union([
   z.object({mode: z.literal('event-params'), event: z.string(), dateRange: DateRangeSchema}),
@@ -273,7 +278,7 @@ export async function runReport(request: Request): Promise<Response> {
     })
   }
 
-  const sid = parseSid(request.headers.get('cookie'))
+  const sid = requestSid(request)
   if (!sid) {
     return new Response(JSON.stringify({error: 'Unauthenticated'}), {
       status: 401,
