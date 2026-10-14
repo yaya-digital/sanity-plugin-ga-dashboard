@@ -12,8 +12,23 @@ function popupSuccessHtml(): string {
   return `<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:40px;color:#475569">Connected. You can close this window.<script>window.close()</script></body></html>`
 }
 
+/** The five characters that can open markup or an attribute, for text placed inside an element. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c] as string)
+}
+
+// Every message is escaped here, so a caller may pass text it did not write (the
+// provider's `error` query parameter was echoed raw before: a reflected XSS on the
+// site origin, fixed 2026-10-14). The page carries no script, so a strict policy costs nothing.
 function oauthErrorHtml(message: string): string {
-  return `<!DOCTYPE html><html><body><p style="font-family:sans-serif;color:red">${message}</p></body></html>`
+  return `<!DOCTYPE html><html><body><p style="font-family:sans-serif;color:red">${escapeHtml(message)}</p></body></html>`
+}
+
+/** Headers for an error page: no script may run, nothing may be framed or cached. */
+const ERROR_PAGE_HEADERS = {
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'X-Content-Type-Options': 'nosniff',
+  'Cache-Control': 'no-store',
 }
 
 function html(body: string, status = 200, extraHeaders: Record<string, string> = {}): Response {
@@ -63,7 +78,8 @@ export async function callback(request: Request): Promise<Response> {
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
 
-  if (error) return html(oauthErrorHtml(`Google returned an error: ${error}`), 400)
+  // Google's error codes are short ASCII tokens (`access_denied`); anything else is not Google.
+  if (error) return html(oauthErrorHtml(`Google returned an error: ${error.slice(0, 64)}`), 400, ERROR_PAGE_HEADERS)
   if (!code || !state) return html(oauthErrorHtml('Missing code or state.'), 400)
 
   const clientId = process.env.YAYA_GA_OAUTH_CLIENT_ID
